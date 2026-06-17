@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+full_test.json
+clusters_test.json
+
+# Environment & secrets
+.env
+
+# Generated data (optional — keep if you want to commit the JSON for offline use)
+# docs/data/hotpot_graph.json
