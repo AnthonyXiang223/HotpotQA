@@ -1,16 +1,3 @@
-"""
-将 HotpotQA 数据集导入 Neo4j 图数据库。
-与 preprocess.py 共享前 90% 的逻辑（下载、采样、实体提取、图构建），
-最终写入 Neo4j 而非 JSON 文件。
-
-使用前请确保 Neo4j 已启动：
-    docker run -d --name neo4j-hotpot -p 7474:7474 -p 7687:7687 \\
-      -e NEO4J_AUTH=neo4j/password123 neo4j:5
-
-用法：
-    pip install neo4j datasets
-    python scripts/import_to_neo4j.py
-"""
 import re
 import os
 import sys
@@ -28,23 +15,16 @@ except ImportError:
     print("请安装 neo4j：pip install neo4j")
     sys.exit(1)
 
-# ── Neo4j 连接配置 ────────────────────────────────────────────
-# 本地 Neo4j 用默认值，AuraDB 云服务通过环境变量覆盖：
-#   set NEO4J_URI=neo4j+s://xxxx.databases.neo4j.io
-#   set NEO4J_USER=neo4j
-#   set NEO4J_PASSWORD=your_password
 NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
 NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "password123")
 NEO4J_AUTH = (NEO4J_USER, NEO4J_PASSWORD)
 DATABASE = os.environ.get("NEO4J_DATABASE", "neo4j")
 
-# ── 数据配置 ──────────────────────────────────────────────────
 SAMPLE_SIZE = 250
 BRIDGE_RATIO = 0.55
 RANDOM_SEED = 42
 
-# ── 实体提取 ──────────────────────────────────────────────────
 ENTITY_PATTERNS = [
     (r'\b(1[89]\d{2}|20[0-2]\d)\b', 'DATE'),
     (r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b', 'ENTITY'),
@@ -56,9 +36,8 @@ STOP_WORDS = {'the', 'and', 'for', 'was', 'are', 'has', 'had', 'his', 'her',
               'have', 'been', 'were', 'also', 'not', 'can', 'may', 'who',
               'whom', 'which'}
 
-
 def extract_entities(text, used_names=None):
-    """从文本中提取候选实体，避免重复。"""
+    
     if used_names is None:
         used_names = set()
     entities = []
@@ -71,18 +50,14 @@ def extract_entities(text, used_names=None):
                     entities.append({"name": name, "type": etype})
     return entities
 
-
 def make_id(prefix, index):
     return f"{prefix}_{index}"
 
-
-# ── 主流程 ────────────────────────────────────────────────────
 def main():
     driver = GraphDatabase.driver(NEO4J_URI, auth=NEO4J_AUTH)
     driver.verify_connectivity()
     print("已连接到 Neo4j")
 
-    # ── 1. 下载并采样数据 ──────────────────────────────────
     print("正在加载 HotpotQA 数据集（distractor 子集）...")
     ds = load_dataset("hotpotqa/hotpot_qa", "distractor")
     train_ds = ds["train"]
@@ -117,14 +92,12 @@ def main():
 
     print(f"已采样：{len(sampled)} 个问题（{bridge_count} bridge, {comp_count} comparison）")
 
-    # ── 2. 构建图数据（同 preprocess.py 逻辑）──────────────
-    nodes_to_create = []  # [{label, props}]
-    edges_to_create = []  # [{source_id, target_id, type, props}]
+    nodes_to_create = []
+    edges_to_create = []
     used_entity_names = set()
     doc_id_map = {}
     multi_hop_paths = {}
 
-    # 节点计数器（每种类型单独编号，确保 ID 唯一）
     node_counters = {"question": 0, "document": 0, "fact": 0, "entity": 0}
 
     for qi, sample in enumerate(sampled):
@@ -147,7 +120,6 @@ def main():
             }
         })
 
-        # 支持性事实
         supporting_facts = sample.get("supporting_facts", {})
         facts_by_doc = defaultdict(list)
         sf_titles = supporting_facts.get("title", [])
@@ -169,7 +141,6 @@ def main():
             processed_titles.add(title)
             doc_idx = titles.index(title)
 
-            # 文档节点（去重）
             if title not in doc_id_map:
                 doc_nid = make_id("d", len(doc_id_map))
                 node_counters["document"] += 1
@@ -187,13 +158,11 @@ def main():
 
             doc_nid = doc_id_map[title]
 
-            # 边：Question → Document
             edges_to_create.append({
                 "source_id": qid, "target_id": doc_nid,
                 "type": "APPEARS_IN", "props": {}
             })
 
-            # 事实节点
             hop_number += 1
             for sent_idx in sorted(facts_by_doc[title]):
                 if doc_idx < len(sentences_list) and sent_idx < len(sentences_list[doc_idx]):
@@ -212,19 +181,16 @@ def main():
                         }
                     })
 
-                    # 边：Fact → Document
                     edges_to_create.append({
                         "source_id": fid, "target_id": doc_nid,
                         "type": "BELONGS_TO", "props": {}
                     })
 
-                    # 边：Question → Fact
                     edges_to_create.append({
                         "source_id": qid, "target_id": fid,
                         "type": "SUPPORTED_BY", "props": {"hop": hop_number}
                     })
 
-                    # 实体提取
                     entities = extract_entities(sent_text, used_entity_names)
                     for ent in entities:
                         eid = make_id("e", node_counters["entity"])
@@ -242,7 +208,6 @@ def main():
                             "type": "MENTIONS", "props": {}
                         })
 
-        # 剩余上下文文档
         for doc_idx, title in enumerate(titles):
             if title in processed_titles:
                 continue
@@ -268,12 +233,10 @@ def main():
                 "type": "APPEARS_IN", "props": {}
             })
 
-    # ── 实体共现 ────────────────────────────────────────────
-    # 同一问题中出现的实体之间建立 CO_OCCURS 关系
     entity_to_questions = defaultdict(set)
     for edge in edges_to_create:
         if edge["type"] == "MENTIONS":
-            # 找到该 fact 所属的 question
+
             for e2 in edges_to_create:
                 if e2["type"] == "SUPPORTED_BY" and e2["target_id"] == edge["source_id"]:
                     entity_to_questions[edge["target_id"]].add(e2["source_id"])
@@ -293,7 +256,6 @@ def main():
                         "type": "CO_OCCURS", "props": {}
                     })
 
-    # ── 计算多跳路径 ────────────────────────────────────────
     fact_nodes = {n["props"]["id"]: n for n in nodes_to_create if n["label"] == "Fact"}
 
     for qi in range(len(sampled)):
@@ -309,14 +271,14 @@ def main():
             fact_node = fact_nodes.get(fid)
             if not fact_node:
                 continue
-            # 找到该事实中的实体
+
             fact_entities = []
             for edge in edges_to_create:
                 if edge["type"] == "MENTIONS" and edge["source_id"] == fid:
                     ent_node = next((n for n in nodes_to_create if n["props"]["id"] == edge["target_id"]), None)
                     if ent_node:
                         fact_entities.append(ent_node["props"]["label"])
-            # 找到该事实对应的文档
+
             doc_title = None
             for edge in edges_to_create:
                 if edge["type"] == "BELONGS_TO" and edge["source_id"] == fid:
@@ -333,19 +295,17 @@ def main():
             })
         multi_hop_paths[qid] = path
 
-    # ── 3. 写入 Neo4j ───────────────────────────────────────
     print(f"\n正在写入 Neo4j：{len(nodes_to_create)} 个节点，{len(edges_to_create)} 条边...")
 
     with driver.session(database=DATABASE) as session:
-        # 先清空旧数据
+
         session.run("MATCH (n) DETACH DELETE n")
         print("  已清空旧数据")
 
-        # 批量创建节点（每批 200 个）
         batch_size = 200
         for i in range(0, len(nodes_to_create), batch_size):
             batch = nodes_to_create[i:i + batch_size]
-            # 按 Label 分组执行 UNWIND 创建
+
             by_label = defaultdict(list)
             for n in batch:
                 by_label[n["label"]].append(n["props"])
@@ -363,7 +323,6 @@ def main():
 
             print(f"  已创建节点：{min(i + batch_size, len(nodes_to_create))}/{len(nodes_to_create)}")
 
-        # 批量创建关系（按类型分组，纯 Cypher 无需 APOC 插件）
         edges_by_type = defaultdict(list)
         for e in edges_to_create:
             edges_by_type[e["type"]].append({
@@ -376,7 +335,7 @@ def main():
         for rel_type, rel_edges in edges_by_type.items():
             for i in range(0, len(rel_edges), batch_size):
                 batch = rel_edges[i:i + batch_size]
-                # 动态 Cypher：关系类型在查询字符串拼接时已确定（按类型分组后是安全的字面量）
+
                 session.execute_write(
                     lambda tx, rt=rel_type, b=batch: (
                         tx.run(
@@ -391,7 +350,6 @@ def main():
             total_created += len(rel_edges)
             print(f"  已创建 {rel_type} 关系：{len(rel_edges)} 条 ({total_created}/{len(edges_to_create)})")
 
-        # ── 4. 创建约束和索引 ───────────────────────────────
         print("\n正在创建约束和索引...")
         for label in ["Question", "Document", "Fact", "Entity"]:
             try:
@@ -402,18 +360,12 @@ def main():
             except Exception as e:
                 print(f"  约束 {label} 已存在或创建失败：{e}")
 
-        # 全文索引（替代 Lunr.js）
         try:
-            session.run("""
-                CREATE FULLTEXT INDEX searchIndex IF NOT EXISTS
-                FOR (n:Question|Fact|Document)
-                ON EACH [n.full_text, n.label, n.answer, n.title, n.first_sentence]
-            """)
+            session.run()
             print("  全文索引：searchIndex 已创建")
         except Exception as e:
             print(f"  全文索引创建失败：{e}")
 
-        # 存储多跳路径（JSON 序列化后存入 Neo4j）
         print("\n正在写入多跳路径元数据...")
         import json as _json
         for qid, path in multi_hop_paths.items():
@@ -423,7 +375,6 @@ def main():
             )
         print(f"  已写入 {len(multi_hop_paths)} 条多跳路径")
 
-    # ── 5. 统计 ─────────────────────────────────────────────
     with driver.session(database=DATABASE) as session:
         result = session.run("MATCH (n) RETURN labels(n)[0] AS label, count(n) AS cnt")
         print("\n节点统计：")
@@ -437,7 +388,6 @@ def main():
 
     driver.close()
     print("\n[完成] 数据已成功导入 Neo4j！")
-
 
 if __name__ == "__main__":
     main()

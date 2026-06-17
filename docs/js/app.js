@@ -1,52 +1,37 @@
-/**
- * app.js - 主应用控制器。
- * 初始化所有模块，处理事件，并将界面串联起来。
- * 数据源：Neo4j 图数据库（通过 FastAPI），不可用时回退到本地 JSON。
- */
-
 (function () {
   'use strict';
 
-  // ── 状态 ──────────────────────────────────────────────────
   let graph, search, cluster, viz;
 
-  // ── 初始化 ────────────────────────────────────────────────
   async function init() {
     showLoading('正在连接 Neo4j 并加载图数据……');
 
     try {
-      // 初始化图引擎（从 Neo4j API 加载数据，失败时自动回退到 JSON）
+
       graph = new HotpotGraph();
       await graph.load();
 
       updateLoading(`已加载 ${graph.nodes.size} 个节点，${graph.edges.size} 条边`);
 
-      // 构建搜索索引（Lunr 作为 API 回退）
       updateLoading('正在构建搜索索引……');
       search = new HotpotSearch(graph);
       search.buildIndex();
 
-      // 运行聚类（优先使用 API）
       updateLoading('正在运行聚类……');
       cluster = new HotpotCluster(graph);
       await cluster.cluster({ minClusterSize: 3, maxClusters: 15 });
 
-      // 初始化可视化
       updateLoading('正在初始化可视化……');
       viz = new HotpotViz('graph-container', graph);
       viz.init();
 
-      // 显示概览：将所有问题作为初始视图渲染
       updateLoading('正在渲染概览……');
       showOverview();
 
-      // 隐藏加载遮罩
       hideLoading();
 
-      // 更新统计信息
       updateStats();
 
-      // 设置界面事件处理
       setupEvents();
 
       toast('就绪！探索多跳推理链。（数据来自 Neo4j）', 'success');
@@ -58,14 +43,15 @@
     }
   }
 
-  // ── 概览 ──────────────────────────────────────────────────
   function showOverview() {
-    // 显示抽样视图：问题及其直接邻居
     const questions = graph.getQuestions();
-    // 取代表性样本以避免过载
-    const sampleSize = Math.min(30, questions.length);
-    const sampled = questions.sort(() => Math.random() - 0.5).slice(0, sampleSize);
+    console.log(`问题总数: ${questions.length}`);
+    const q0 = questions[0];
+    const nbrs = graph.adjacency.get(q0.id) || [];
+    console.log(`${q0.id} 的邻居数: ${nbrs.length}`);
 
+    const sampleSize = Math.min(200, questions.length);
+    const sampled = questions.sort(() => Math.random() - 0.5).slice(0, sampleSize);
     const subNodes = [];
     const subEdges = [];
     const addedNodes = new Set();
@@ -74,7 +60,7 @@
     for (const q of sampled) {
       if (!addedNodes.has(q.id)) { addedNodes.add(q.id); subNodes.push(q); }
       const neighbors = graph.adjacency.get(q.id) || [];
-      for (const { target, edgeId } of neighbors.slice(0, 3)) { // 每个问题限制邻居数
+      for (const { target, edgeId } of neighbors.slice(0, 8)) {
         if (!addedEdges.has(edgeId)) { addedEdges.add(edgeId);
           const edge = graph.edges.get(edgeId);
           if (edge) subEdges.push(edge);
@@ -86,12 +72,12 @@
       }
     }
 
+    console.log(`概览：${subNodes.length} 节点, ${subEdges.length} 边（${sampled.length} 个采样问题）`);
     viz.renderSubgraph({ nodes: subNodes, edges: subEdges }, { fit: true });
   }
 
-  // ── 事件处理 ──────────────────────────────────────────────
   function setupEvents() {
-    // 搜索输入
+
     const searchInput = document.getElementById('search-input');
     const searchSuggestions = document.getElementById('search-suggestions');
     let searchTimeout;
@@ -113,18 +99,15 @@
       }
     });
 
-    // 点击外部关闭建议
     document.addEventListener('click', (e) => {
       if (!searchInput.contains(e.target) && !searchSuggestions.contains(e.target)) {
         searchSuggestions.classList.add('hidden');
       }
     });
 
-    // 标签页切换
     document.getElementById('tab-search').addEventListener('click', () => switchTab('search'));
     document.getElementById('tab-clusters').addEventListener('click', () => switchTab('clusters'));
 
-    // 节点点击 → 显示详情
     document.addEventListener('node-click', (e) => {
       const { nodeId, node } = e.detail;
       if (node && node.type === 'question') {
@@ -134,14 +117,12 @@
       }
     });
 
-    // 双击问题 → 展开视图
     document.addEventListener('question-dblclick', (e) => {
       const { nodeId } = e.detail;
       viz.showQuestionGraph(nodeId);
       showQuestionDetail(nodeId);
     });
 
-    // 按钮控制
     document.getElementById('btn-fit').addEventListener('click', () => viz.fitView());
     document.getElementById('btn-reset').addEventListener('click', () => {
       viz.reset();
@@ -152,12 +133,10 @@
     });
   }
 
-  // ── 搜索 ──────────────────────────────────────────────────
   async function performSearch(query) {
     const container = document.getElementById('search-results');
     const suggestions = document.getElementById('search-suggestions');
 
-    // 优先使用 Neo4j API 搜索（searchQuestions 已包含回退逻辑）
     const results = await search.searchQuestions(query, 15);
 
     if (results.length === 0) {
@@ -166,7 +145,6 @@
       return;
     }
 
-    // 更新侧边栏结果
     container.innerHTML = results.map((r, i) => `
       <div class="search-result-item bg-gray-750 rounded-lg p-3 border border-gray-700 fade-in"
            data-question-id="${r.ref}"
@@ -187,7 +165,6 @@
       </div>
     `).join('');
 
-    // 搜索结果的点击处理
     container.querySelectorAll('.search-result-item').forEach(item => {
       item.addEventListener('click', function () {
         const qid = this.dataset.questionId;
@@ -198,7 +175,6 @@
       });
     });
 
-    // "在图谱中显示"按钮
     container.querySelectorAll('.show-in-graph-btn').forEach(btn => {
       btn.addEventListener('click', function (e) {
         e.stopPropagation();
@@ -208,7 +184,6 @@
       });
     });
 
-    // 同时更新下拉建议
     suggestions.innerHTML = results.slice(0, 8).map(r => `
       <div class="px-3 py-2 hover:bg-gray-700 cursor-pointer text-sm border-b border-gray-700 last:border-0 suggestion-item"
            data-question-id="${r.ref}">
@@ -234,7 +209,6 @@
     });
   }
 
-  // ── 详情面板 ──────────────────────────────────────────────
   function showQuestionDetail(questionId) {
     const node = graph.getNode(questionId);
     if (!node) return;
@@ -314,7 +288,6 @@
         </div>
     `;
 
-    // 显示关联的问题
     const neighbors = graph.adjacency.get(nodeId) || [];
     const connectedQuestions = [];
     const visited = new Set();
@@ -355,7 +328,6 @@
     panel.innerHTML = html;
   }
 
-  // ── 聚类 ──────────────────────────────────────────────────
   function renderClusters() {
     const clusters = cluster.getClusters();
     const stats = cluster.getStats();
@@ -380,7 +352,6 @@
       </div>
     `).join('');
 
-    // 点击：在图谱中显示聚类
     listContainer.querySelectorAll('.cluster-card').forEach(card => {
       card.addEventListener('click', function () {
         const clusterId = this.dataset.clusterId;
@@ -406,7 +377,6 @@
     });
   }
 
-  // ── 标签页切换 ────────────────────────────────────────────
   function switchTab(tab) {
     const tabSearch = document.getElementById('tab-search');
     const tabClusters = document.getElementById('tab-clusters');
@@ -429,7 +399,6 @@
     }
   }
 
-  // ── 界面辅助函数 ──────────────────────────────────────────
   function updateStats() {
     const stats = graph.getStats();
     document.getElementById('graph-stats').textContent =
@@ -467,7 +436,6 @@
     return div.innerHTML;
   }
 
-  // ── 启动 ──────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', init);
 
 })();

@@ -1,8 +1,3 @@
-"""
-将 HotpotQA 数据集预处理为图结构，供 Web 可视化使用。
-下载 distractor 子集，抽样问题，提取实体，
-并导出 JSON 图文件供 Web 应用使用。
-"""
 import json
 import re
 import os
@@ -15,25 +10,22 @@ except ImportError:
     print("请安装 datasets：pip install datasets")
     sys.exit(1)
 
-# ── 配置 ──────────────────────────────────────────────────────
-SAMPLE_SIZE = 250           # 抽样问题总数
-BRIDGE_RATIO = 0.55         # 约 55% bridge 类型，45% comparison 类型
+SAMPLE_SIZE = 1000
+BRIDGE_RATIO = 0.55
 OUTPUT_PATH = os.path.join(os.path.dirname(__file__), "..", "docs", "data", "hotpot_graph.json")
 RANDOM_SEED = 42
 
-# ── 简单实体提取 ───────────────────────────────────────────────
-# 提取候选实体：首字母大写的名词短语、命名实体模式
 ENTITY_PATTERNS = [
-    # 年份和日期
+
     (r'\b(1[89]\d{2}|20[0-2]\d)\b', 'DATE'),
-    # 专有名词序列（2个及以上首字母大写的单词）
+
     (r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b', 'ENTITY'),
-    # 单个专有名词（非句首的大写单词）
+
     (r'(?<!\.\s)(?<!\?\s)(?<!\!\s)\b([A-Z][a-z]{2,})\b', 'ENTITY'),
 ]
 
 def extract_entities(text, used_names=None):
-    """从文本中提取候选实体，避免重复。"""
+    
     if used_names is None:
         used_names = set()
     entities = []
@@ -46,8 +38,6 @@ def extract_entities(text, used_names=None):
                     entities.append({"name": name, "type": etype})
     return entities
 
-
-# ── 加载数据集 ─────────────────────────────────────────────────
 print("正在加载 HotpotQA 数据集（distractor 子集）...")
 ds = load_dataset("hotpotqa/hotpot_qa", "distractor")
 train_ds = ds["train"]
@@ -55,8 +45,6 @@ val_ds = ds["validation"]
 print(f"  训练集：{len(train_ds)} 条样本")
 print(f"  验证集：{len(val_ds)} 条样本")
 
-# ── 抽样问题 ───────────────────────────────────────────────────
-# 按类型分开
 bridge_train = [s for s in train_ds if s["type"] == "bridge"]
 comparison_train = [s for s in train_ds if s["type"] == "comparison"]
 bridge_val = [s for s in val_ds if s["type"] == "bridge"]
@@ -65,14 +53,12 @@ comparison_val = [s for s in val_ds if s["type"] == "comparison"]
 print(f"  Bridge：{len(bridge_train)} 训练, {len(bridge_val)} 验证")
 print(f"  Comparison：{len(comparison_train)} 训练, {len(comparison_val)} 验证")
 
-# 合并并抽样
 all_samples = bridge_train + comparison_train + bridge_val + comparison_val
 
 import random
 random.seed(RANDOM_SEED)
 random.shuffle(all_samples)
 
-# 取平衡子集
 n_bridge = int(SAMPLE_SIZE * BRIDGE_RATIO)
 n_comparison = SAMPLE_SIZE - n_bridge
 
@@ -91,12 +77,11 @@ for s in all_samples:
 
 print(f"\n已抽样：{len(sampled)} 个问题（{bridge_count} bridge, {comp_count} comparison）")
 
-# ── 构建图 ────────────────────────────────────────────────────
 nodes = []
 edges = []
 node_ids = set()
 used_entity_names = set()
-doc_id_map = {}  # title → doc_node_id
+doc_id_map = {}
 
 def make_id(prefix, index):
     return f"{prefix}_{index}"
@@ -108,7 +93,6 @@ for qi, sample in enumerate(sampled):
     qtype = sample["type"]
     difficulty = sample.get("level", "medium")
 
-    # 问题节点
     nodes.append({
         "id": qid,
         "type": "question",
@@ -120,23 +104,20 @@ for qi, sample in enumerate(sampled):
     })
     node_ids.add(qid)
 
-    # 支持性事实：包含 'title' 和 'sent_id' 列表的字典
     supporting_facts = sample.get("supporting_facts", {})
-    # 按文档标题分组，按句子索引排序
+
     facts_by_doc = defaultdict(list)
     sf_titles = supporting_facts.get("title", [])
     sf_sent_ids = supporting_facts.get("sent_id", [])
     for title, sent_idx in zip(sf_titles, sf_sent_ids):
         facts_by_doc[title].append(sent_idx)
 
-    # 上下文文档
     context = sample.get("context", {})
     titles = context.get("title", [])
     sentences_list = context.get("sentences", [])
 
-    # 构建文档和事实节点
     hop_number = 0
-    # 先处理支持性事实文档（按顺序），再处理其他
+
     processed_titles = set()
     ordered_titles = list(facts_by_doc.keys())
 
@@ -148,7 +129,6 @@ for qi, sample in enumerate(sampled):
         if doc_idx < 0:
             continue
 
-        # 文档节点
         if title not in doc_id_map:
             doc_nid = make_id("d", len(doc_id_map))
             doc_id_map[title] = doc_nid
@@ -164,14 +144,12 @@ for qi, sample in enumerate(sampled):
 
         doc_nid = doc_id_map[title]
 
-        # 边：问题 → 文档
         edges.append({
             "source": qid,
             "target": doc_nid,
             "type": "appears_in",
         })
 
-        # 事实节点（仅支持性事实）
         hop_number += 1
         for sent_idx in sorted(facts_by_doc[title]):
             if doc_idx < len(sentences_list) and sent_idx < len(sentences_list[doc_idx]):
@@ -187,14 +165,12 @@ for qi, sample in enumerate(sampled):
                 })
                 node_ids.add(fid)
 
-                # 边：事实 → 文档
                 edges.append({
                     "source": fid,
                     "target": doc_nid,
                     "type": "belongs_to",
                 })
 
-                # 边：问题 → 事实
                 edges.append({
                     "source": qid,
                     "target": fid,
@@ -202,7 +178,6 @@ for qi, sample in enumerate(sampled):
                     "hop": hop_number,
                 })
 
-                # 从事实中提取实体
                 entities = extract_entities(sent_text, used_entity_names)
                 for ent in entities:
                     eid = make_id("e", len([n for n in nodes if n["type"] == "entity"]))
@@ -214,14 +189,12 @@ for qi, sample in enumerate(sampled):
                     })
                     node_ids.add(eid)
 
-                    # 边：事实 → 实体，实体 → 事实（用于连通性）
                     edges.append({
                         "source": fid,
                         "target": eid,
                         "type": "mentions",
                     })
 
-    # 添加剩余的上下文文档（非支持性）
     for doc_idx, title in enumerate(titles):
         if title in processed_titles:
             continue
@@ -246,8 +219,6 @@ for qi, sample in enumerate(sampled):
             "type": "appears_in",
         })
 
-# ── 跨事实链接实体（共现）──────────────────────────────────────
-# 出现在同一问题的事实中的实体之间建立 co_occurs 边
 entity_to_questions = defaultdict(set)
 entity_to_facts = defaultdict(set)
 for edge in edges:
@@ -256,16 +227,15 @@ for edge in edges:
 for node in nodes:
     if node["type"] == "fact":
         fid = node["id"]
-        # 找到该事实所属的问题
+
         for edge in edges:
             if edge["type"] == "supported_by" and edge["target"] == fid:
                 question_id = edge["source"]
-                # 找到该事实中提及的实体
+
                 for e_edge in edges:
                     if e_edge["type"] == "mentions" and e_edge["source"] == fid:
                         entity_to_questions[e_edge["target"]].add(question_id)
 
-# 添加共现边：出现在同一问题中的实体之间
 for qid in [n["id"] for n in nodes if n["type"] == "question"]:
     q_entities = [eid for eid, qs in entity_to_questions.items() if qid in qs]
     for i in range(len(q_entities)):
@@ -276,26 +246,23 @@ for qid in [n["id"] for n in nodes if n["type"] == "question"]:
                 "type": "co_occurs",
             })
 
-# 去除重复边（相同的 source, target, type）
 seen_edges = set()
 unique_edges = []
 for edge in edges:
     key = (edge["source"], edge["target"], edge["type"])
     if key not in seen_edges:
         seen_edges.add(key)
-        # 对于无向边类型，同时检查反向
+
         if edge["type"] in ("co_occurs",):
             seen_edges.add((edge["target"], edge["source"], edge["type"]))
         unique_edges.append(edge)
 
-# ── 计算多跳路径 ──────────────────────────────────────────────
-# 为每个问题记录跳转序列
 multi_hop_paths = {}
 for node in nodes:
     if node["type"] != "question":
         continue
     qid = node["id"]
-    # 获取按跳数排序的支持性事实
+
     q_facts = []
     for edge in unique_edges:
         if edge["type"] == "supported_by" and edge["source"] == qid:
@@ -303,14 +270,14 @@ for node in nodes:
     q_facts.sort()
     path = []
     for hop, fid in q_facts:
-        # 找到该事实中的实体
+
         fact_entities = []
         for edge in unique_edges:
             if edge["type"] == "mentions" and edge["source"] == fid:
                 ent_node = next((n for n in nodes if n["id"] == edge["target"]), None)
                 if ent_node:
                     fact_entities.append(ent_node["label"])
-        # 找到该事实对应的文档
+
         doc_title = None
         for edge in unique_edges:
             if edge["type"] == "belongs_to" and edge["source"] == fid:
@@ -328,7 +295,6 @@ for node in nodes:
             })
     multi_hop_paths[qid] = path
 
-# ── 输出 ───────────────────────────────────────────────────────
 output = {
     "meta": {
         "total_questions": len(sampled),
@@ -353,7 +319,6 @@ print(f"  节点数：{len(nodes)}")
 print(f"  边数：{len(unique_edges)}")
 print(f"  多跳路径数：{len(multi_hop_paths)}")
 
-# 统计信息
 node_types = defaultdict(int)
 for n in nodes:
     node_types[n["type"]] += 1

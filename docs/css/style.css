@@ -1,6 +1,3 @@
-/* style.css - HotpotQA 探索器自定义样式 */
-
-/* ── 全局 ─────────────────────────────────────────────────── */
 * {
   scrollbar-width: thin;
   scrollbar-color: #4a5568 #1a202c;
@@ -20,7 +17,6 @@
   background: #718096;
 }
 
-/* ── 搜索结果 ────────────────────────────────────────────── */
 .search-result-item {
   cursor: pointer;
   transition: all 0.15s ease;
@@ -35,7 +31,6 @@
   background: rgba(66, 153, 225, 0.15);
 }
 
-/* ── 聚类卡片 ────────────────────────────────────────────── */
 .cluster-card {
   cursor: pointer;
   transition: all 0.15s ease;
@@ -49,7 +44,6 @@
   background: rgba(156, 39, 176, 0.15);
 }
 
-/* ── 详情面板 ────────────────────────────────────────────── */
 .hop-step {
   position: relative;
   padding-left: 24px;
@@ -80,17 +74,14 @@
   border: 1px solid rgba(234, 67, 53, 0.3);
 }
 
-/* ── 图谱容器 ────────────────────────────────────────────── */
 #graph-container {
   min-height: 400px;
 }
 
-/* ── 标签页 ──────────────────────────────────────────────── */
 #tab-search, #tab-clusters {
   transition: all 0.2s ease;
 }
 
-/* ── 加载 ────────────────────────────────────────────────── */
 #loading-overlay {
   transition: opacity 0.3s ease;
 }
@@ -99,7 +90,6 @@
   pointer-events: none;
 }
 
-/* ── 动画 ────────────────────────────────────────────────── */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
@@ -108,7 +98,6 @@
   animation: fadeIn 0.2s ease;
 }
 
-/* ── 响应式 ──────────────────────────────────────────────── */
 @media (max-width: 1024px) {
   aside.w-80 { width: 240px; }
   aside.w-96 { width: 280px; }

@@ -1,41 +1,26 @@
-/**
- * graph.js - HotpotQA 多跳探索图引擎。
- * 管理图的构建、路径查找和邻域查询。
- * 数据来源：Neo4j 图数据库（通过 FastAPI）。
- */
 class HotpotGraph {
   constructor() {
-    /**
-     * API 地址列表（按优先级自动检测）：
-     * 1. Render 云端 API（部署后自动生效）
-     * 2. 本地开发 API
-     * 无法连接时回退到本地 JSON 文件。
-     */
+    
     this.apiCandidates = [
-      'https://hotpotqa-api.onrender.com',  // Render 云端（push 后去 Render 创建即可）
-      'http://localhost:8000',              // 本地开发
+      'https://hotpotqa-api.onrender.com',
+      'http://localhost:8000',
     ];
-    /** 当前可用的 API 地址（自动探测） */
+    
     this.apiBase = null;
-    /** 节点 Map：id → 节点数据 */
+    
     this.nodes = new Map();
-    /** 边 Map：id → 边数据 */
+    
     this.edges = new Map();
-    /** 邻接表：nodeId → [{target, edgeId, edgeType}] */
+    
     this.adjacency = new Map();
-    /** 多跳路径：questionId → 跳转链 */
+    
     this.multiHopPaths = {};
-    /** 节点类型索引：type → [nodeIds] */
+    
     this.nodeTypes = new Map();
   }
 
-  /**
-   * 从 Neo4j API 加载完整图数据，格式与旧 JSON 兼容。
-   * @param {object} [_data] - 可选，传入数据则从本地加载（回退模式）
-   */
-  /**
-   * 自动探测可用的 API 地址。
-   */
+  
+  
   async _detectApi() {
     for (const url of this.apiCandidates) {
       try {
@@ -45,7 +30,7 @@ class HotpotGraph {
           console.log(`API 已连接：${url}`);
           return;
         }
-      } catch (_) { /* 继续尝试下一个 */ }
+      } catch (_) {  }
     }
     console.log('无可用 API，将使用本地 JSON 数据');
   }
@@ -53,11 +38,11 @@ class HotpotGraph {
   async load(_data) {
     let data = _data;
     if (!data) {
-      // 先探测可用的 API
+
       if (!this.apiBase) await this._detectApi();
 
       if (this.apiBase) {
-        // 从 Neo4j API 加载
+
         try {
           const resp = await fetch(`${this.apiBase}/api/graph/full`);
           if (!resp.ok) throw new Error(`API 返回 ${resp.status}`);
@@ -68,7 +53,6 @@ class HotpotGraph {
         }
       }
 
-      // API 不可用或失败 → 回退本地 JSON
       if (!data) {
         const resp = await fetch('data/hotpot_graph.json');
         if (!resp.ok) throw new Error(`本地 JSON 加载失败 ${resp.status}`);
@@ -77,7 +61,6 @@ class HotpotGraph {
       }
     }
 
-    // 加载节点（逻辑与旧版相同）
     for (const node of data.nodes) {
       this.nodes.set(node.id, node);
       if (!this.nodeTypes.has(node.type)) {
@@ -89,11 +72,10 @@ class HotpotGraph {
       }
     }
 
-    // 加载边
     for (const edge of data.edges) {
       const edgeId = `${edge.source}_${edge.target}_${edge.type}`;
       this.edges.set(edgeId, edge);
-      // 构建邻接表（无向图遍历）
+
       if (this.adjacency.has(edge.source)) {
         this.adjacency.get(edge.source).push({
           target: edge.target,
@@ -110,46 +92,33 @@ class HotpotGraph {
       }
     }
 
-    // 加载多跳路径
     this.multiHopPaths = data.multi_hop_paths || {};
 
     console.log(`图已加载：${this.nodes.size} 个节点，${this.edges.size} 条边`);
     console.log(`  节点类型：${[...this.nodeTypes.entries()].map(([t, ids]) => `${t}:${ids.length}`).join(', ')}`);
   }
 
-  /**
-   * 通过 ID 获取节点。
-   */
+  
   getNode(nodeId) {
     return this.nodes.get(nodeId);
   }
 
-  /**
-   * 获取给定类型的所有节点。
-   */
+  
   getNodesByType(type) {
     return (this.nodeTypes.get(type) || []).map(id => this.nodes.get(id));
   }
 
-  /**
-   * 获取所有问题节点。
-   */
+  
   getQuestions() {
     return this.getNodesByType('question');
   }
 
-  /**
-   * 获取问题的多跳推理路径。
-   * 返回包含实体和文档的有序事实列表。
-   */
+  
   getMultiHopPath(questionId) {
     return this.multiHopPaths[questionId] || [];
   }
 
-  /**
-   * 使用 BFS 获取节点周围指定深度的邻域。
-   * 返回 {nodes: [...], edges: [...]} 子图。
-   */
+  
   getNeighborhood(nodeId, depth = 2) {
     const visited = new Set();
     const queue = [{ id: nodeId, dist: 0 }];
@@ -167,7 +136,7 @@ class HotpotGraph {
 
       const neighbors = this.adjacency.get(id) || [];
       for (const { target, edgeId, edgeType } of neighbors) {
-        // 添加边
+
         if (!addedEdges.has(edgeId)) {
           addedEdges.add(edgeId);
           const edge = this.edges.get(edgeId);
@@ -188,10 +157,7 @@ class HotpotGraph {
     return { nodes: subNodes, edges: subEdges };
   }
 
-  /**
-   * 获取问题的完整推理子图：
-   * 问题节点 + 其支持性事实 + 对应文档 + 实体。
-   */
+  
   getQuestionSubgraph(questionId) {
     const subNodes = [];
     const subEdges = [];
@@ -214,15 +180,13 @@ class HotpotGraph {
       }
     };
 
-    // 添加问题节点
     addNode(questionId);
 
-    // 添加所有邻居及其边
     const neighbors = this.adjacency.get(questionId) || [];
     for (const { target, edgeId } of neighbors) {
       addEdge(edgeId);
       addNode(target);
-      // 添加第二层邻居（事实 → 实体，事实 → 文档）
+
       const secondNeighbors = this.adjacency.get(target) || [];
       for (const { target: t2, edgeId: e2 } of secondNeighbors) {
         addEdge(e2);
@@ -233,15 +197,13 @@ class HotpotGraph {
     return { nodes: subNodes, edges: subEdges };
   }
 
-  /**
-   * 查找涉及给定实体（按名称）的所有问题。
-   */
+  
   findQuestionsByEntity(entityName) {
     const results = [];
     const entityNameLower = entityName.toLowerCase();
     for (const [nodeId, node] of this.nodes) {
       if (node.type === 'entity' && node.label.toLowerCase().includes(entityNameLower)) {
-        // 查找与该实体相连的问题
+
         const neighbors = this.adjacency.get(nodeId) || [];
         for (const { target, edgeType } of neighbors) {
           if (edgeType === 'mentions') {
@@ -264,9 +226,7 @@ class HotpotGraph {
     return results;
   }
 
-  /**
-   * 获取图统计信息。
-   */
+  
   getStats() {
     return {
       totalNodes: this.nodes.size,
@@ -279,5 +239,4 @@ class HotpotGraph {
   }
 }
 
-// 导出供其他模块使用
 window.HotpotGraph = HotpotGraph;

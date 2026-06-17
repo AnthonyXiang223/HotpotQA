@@ -1,9 +1,3 @@
-/**
- * visualize.js - 使用 vis-network 进行图可视化。
- * 渲染 HotpotQA 图并支持交互功能。
- * 需要在此脚本之前加载 vis-network。
- */
-
 class HotpotViz {
   constructor(containerId, graph) {
     this.containerId = containerId;
@@ -14,15 +8,13 @@ class HotpotViz {
     this.currentQuestionId = null;
     this.highlightedPath = null;
 
-    // 节点类型配色方案（深色调，白色文字可清晰阅读）
     this.colors = {
-      question: { background: '#1a3a6e', border: '#0f2240', shape: 'dot' },
-      document: { background: '#1a4a2a', border: '#0e2a17', shape: 'square' },
-      fact: { background: '#7a5c10', border: '#4a3708', shape: 'box' },
-      entity: { background: '#7a1f1a', border: '#4a100e', shape: 'diamond' },
+      question: { background: '#1a3d7c', border: '#0f2550', shape: 'dot' },
+      document: { background: '#1a5c2a', border: '#0e3817', shape: 'square' },
+      fact: { background: '#8a6d0e', border: '#5a4706', shape: 'box' },
+      entity: { background: '#8a1f1a', border: '#5a100e', shape: 'diamond' },
     };
 
-    // 节点类型到图标的映射（使用 Unicode 字符）
     this.icons = {
       question: 'Q',
       document: 'D',
@@ -31,9 +23,7 @@ class HotpotViz {
     };
   }
 
-  /**
-   * 初始化 vis-network 实例。
-   */
+  
   init() {
     if (!this.container) {
       console.error(`容器 #${this.containerId} 未找到`);
@@ -87,7 +77,6 @@ class HotpotViz {
 
     this.network = new vis.Network(this.container, this.data, options);
 
-    // 事件处理
     this.network.on('click', (params) => this._onClick(params));
     this.network.on('doubleClick', (params) => this._onDoubleClick(params));
     this.network.on('hoverNode', (params) => this._onHoverNode(params));
@@ -96,31 +85,24 @@ class HotpotViz {
     console.log('可视化已初始化');
   }
 
-  /**
-   * 将图子图转换为 vis-network 格式并渲染。
-   */
+  
   renderSubgraph(subgraph, options = {}) {
     const { focusNode = null, highlightPath = null, fit = true } = options;
 
-    // 清空现有数据
     this.data.nodes.clear();
     this.data.edges.clear();
 
-    // 添加节点
     const visNodes = subgraph.nodes.map(node => this._toVisNode(node));
     this.data.nodes.add(visNodes);
 
-    // 添加边
     const visEdges = subgraph.edges.map((edge, idx) => this._toVisEdge(edge, idx));
     this.data.edges.add(visEdges);
 
-    // 如果指定了多跳路径则高亮显示
     if (highlightPath) {
       this._highlightPath(highlightPath);
       this.highlightedPath = highlightPath;
     }
 
-    // 适应视图
     if (fit) {
       setTimeout(() => {
         if (focusNode) {
@@ -132,9 +114,7 @@ class HotpotViz {
     }
   }
 
-  /**
-   * 显示问题的完整图（问题 + 上下文文档 + 事实 + 实体）。
-   */
+  
   showQuestionGraph(questionId) {
     this.currentQuestionId = questionId;
     const subgraph = this.graph.getQuestionSubgraph(questionId);
@@ -148,18 +128,14 @@ class HotpotViz {
     return subgraph;
   }
 
-  /**
-   * 显示搜索结果邻域。
-   */
+  
   showNeighborhood(nodeId, depth = 2) {
     const subgraph = this.graph.getNeighborhood(nodeId, depth);
     this.renderSubgraph(subgraph, { focusNode: nodeId });
     return subgraph;
   }
 
-  /**
-   * 显示聚类概览：聚类中的所有问题及其连接。
-   */
+  
   showCluster(cluster) {
     const subNodes = [];
     const subEdges = [];
@@ -167,13 +143,12 @@ class HotpotViz {
     const addedEdges = new Set();
 
     for (const qNode of cluster.questions) {
-      // 添加问题节点
+
       if (!addedNodes.has(qNode.id)) {
         addedNodes.add(qNode.id);
         subNodes.push(qNode);
       }
 
-      // 添加关联的事实和实体
       const neighbors = this.graph.adjacency.get(qNode.id) || [];
       for (const { target, edgeId } of neighbors) {
         if (!addedEdges.has(edgeId)) {
@@ -193,19 +168,16 @@ class HotpotViz {
     return { nodes: subNodes, edges: subEdges };
   }
 
-  /**
-   * 高亮显示多跳推理路径。
-   */
+  
   _highlightPath(path) {
     if (!path || path.length === 0) return;
 
     const pathNodeIds = new Set();
     const pathEdgePairs = new Set();
 
-    // 收集路径节点
     for (const hop of path) {
       pathNodeIds.add(hop.fact_id);
-      // 添加关联的实体
+
       const factNode = this.graph.getNode(hop.fact_id);
       if (factNode) {
         const neighbors = this.graph.adjacency.get(hop.fact_id) || [];
@@ -215,7 +187,7 @@ class HotpotViz {
             pathEdgePairs.add(`${hop.fact_id}_${target}`);
           }
         }
-        // 添加文档连接
+
         for (const { target, edgeId, edgeType } of neighbors) {
           if (edgeType === 'belongs_to') {
             pathNodeIds.add(target);
@@ -225,7 +197,6 @@ class HotpotViz {
       }
     }
 
-    // 更新节点样式和边样式
     const allNodes = this.data.nodes.get();
     const allEdges = this.data.edges.get();
 
@@ -257,9 +228,7 @@ class HotpotViz {
     }
   }
 
-  /**
-   * 重置所有高亮。
-   */
+  
   clearHighlights() {
     const allNodes = this.data.nodes.get();
     const allEdges = this.data.edges.get();
@@ -286,26 +255,20 @@ class HotpotViz {
     }
   }
 
-  /**
-   * 适应视图以显示所有节点。
-   */
+  
   fitView() {
     if (this.network) {
       this.network.fit({ animation: true });
     }
   }
 
-  /**
-   * 重置视图。
-   */
+  
   reset() {
     this.data.nodes.clear();
     this.data.edges.clear();
     this.currentQuestionId = null;
     this.highlightedPath = null;
   }
-
-  // ── 内部辅助函数 ────────────────────────────────────────────
 
   _toVisNode(node) {
     const colors = this.colors[node.type] || this.colors.question;
@@ -359,7 +322,7 @@ class HotpotViz {
   }
 
   _buildTooltip(node) {
-    // 节点类型中文映射
+
     const typeNames = { question: '问题', document: '文档', fact: '事实', entity: '实体' };
     let html = `<div style="max-width:300px;padding:4px;">`;
     html += `<strong>${typeNames[node.type] || node.type.toUpperCase()}</strong><br>`;
@@ -382,13 +345,11 @@ class HotpotViz {
     return text.length > maxLen ? text.substring(0, maxLen) + '...' : text;
   }
 
-  // ── 事件处理 ────────────────────────────────────────────────
-
   _onClick(params) {
     if (params.nodes.length > 0) {
       const nodeId = params.nodes[0];
       const node = this.graph.getNode(nodeId);
-      // 派发事件供应用处理
+
       const event = new CustomEvent('node-click', { detail: { nodeId, node } });
       document.dispatchEvent(event);
     }
@@ -408,11 +369,11 @@ class HotpotViz {
   _onHoverNode(params) {
     const nodeId = params.node;
     const node = this.graph.getNode(nodeId);
-    // 可以显示浮动提示或高亮关联边
+
   }
 
   _unhoverNode() {
-    // 重置悬停状态
+
   }
 }
 
