@@ -1,7 +1,7 @@
 # HotpotQA 多跳推理探索平台
 
 [HotpotQA](https://hotpotqa.github.io/) 多跳问答数据集的可视化探索工具。
-
+本项目通过 import_to_neo4j.py 将 HotpotQA 数据集导入 Neo4j（4 种节点 Label + 5 种关系），server.py 用 Cypher 封装为 REST API 提供搜索、子图、聚类等查询，前端在设置 apiBase 后自动切换到 Neo4j 模式进行全文索引和服务端聚类
 ## 访问
 
 在线访问：`https://anthonyxiang223.github.io/HotpotQA/`
