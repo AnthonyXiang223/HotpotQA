@@ -4,15 +4,7 @@
 
 ## 访问
 
-在线访问：`https://你的用户名.github.io/hotpot-qa/`
-
-本地运行：
-
-```bash
-cd docs && python -m http.server 8080
-```
-
-打开 http://localhost:8080。
+在线访问：`https://anthonyxiang223.github.io/HotpotQA/`
 
 ## 关于数据集
 
